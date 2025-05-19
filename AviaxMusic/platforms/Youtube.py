@@ -12,7 +12,7 @@ from pyrogram.enums import MessageEntityType
 from pyrogram.types import Message
 from youtubesearchpython.__future__ import VideosSearch
 
-# Configure logging to show all errors in terminal
+# Configure logging
 logging.basicConfig(
     level=logging.DEBUG,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -71,8 +71,8 @@ class YouTubeAPI:
             'logger': logger
         }
 
-    async def extract_url(self, message: Message) -> Optional[str]:
-        """Extract YouTube URL from Pyrogram message"""
+    async def url(self, message: Message) -> Optional[str]:
+        """Extract YouTube URL from Pyrogram message (renamed from extract_url)"""
         try:
             # Check both message and replied message
             for msg in [message, message.reply_to_message]:
@@ -102,8 +102,8 @@ class YouTubeAPI:
             logger.error(f"URL extraction error: {str(e)}", exc_info=True)
             return None
 
-    async def process_query(self, query: str) -> Tuple[Optional[Dict], str]:
-        """Process YouTube URL or search query"""
+    async def details(self, query: str) -> Tuple[Optional[Dict], str]:
+        """Get video details (renamed from process_query)"""
         try:
             await self._rate_limit()
             
@@ -152,11 +152,11 @@ class YouTubeAPI:
             logger.error(f"Processing error: {str(e)}", exc_info=True)
             return None, "Failed to process request"
 
-    async def get_stream_url(self, video_id: str) -> Tuple[Optional[str], str]:
-        """Get direct streaming URL"""
+    async def video(self, video_id: str) -> Tuple[Optional[str], str]:
+        """Get video stream URL (renamed from get_stream_url)"""
         try:
             await self._rate_limit()
-            ydl_opts = self._get_ydl_opts()
+            ydl_opts = self._get_ydl_opts(audio_only=False)
             
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = await asyncio.to_thread(
@@ -173,17 +173,19 @@ class YouTubeAPI:
             logger.error(f"Stream URL error: {str(e)}", exc_info=True)
             return None, "Failed to get stream URL"
 
-    async def download(self, video_id: str) -> Tuple[Optional[str], str]:
-        """Download audio file"""
+    async def download(self, video_id: str, audio_only=True) -> Tuple[Optional[str], str]:
+        """Download media file"""
         try:
             await self._rate_limit()
-            ydl_opts = self._get_ydl_opts()
+            ydl_opts = self._get_ydl_opts(audio_only)
             ydl_opts['outtmpl'] = 'downloads/%(id)s.%(ext)s'
-            ydl_opts['postprocessors'] = [{
-                'key': 'FFmpegExtractAudio',
-                'preferredcodec': 'mp3',
-                'preferredquality': '192',
-            }]
+            
+            if audio_only:
+                ydl_opts['postprocessors'] = [{
+                    'key': 'FFmpegExtractAudio',
+                    'preferredcodec': 'mp3',
+                    'preferredquality': '192',
+                }]
             
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = await asyncio.to_thread(
@@ -193,7 +195,7 @@ class YouTubeAPI:
                 )
                 
                 path = ydl.prepare_filename(info)
-                if not path.endswith('.mp3'):
+                if audio_only and not path.endswith('.mp3'):
                     new_path = os.path.splitext(path)[0] + '.mp3'
                     os.rename(path, new_path)
                     path = new_path
