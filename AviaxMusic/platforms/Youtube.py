@@ -12,7 +12,7 @@ from pyrogram.enums import MessageEntityType
 from pyrogram.types import Message
 from youtubesearchpython.__future__ import VideosSearch
 
-# Configure logging
+# Configure logging to show all errors
 logging.basicConfig(
     level=logging.DEBUG,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -20,7 +20,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-class YouTubeAPI:
+class YouTube:
     def __init__(self):
         self.base_url = "https://www.youtube.com/watch?v="
         self.url_regex = re.compile(
@@ -72,8 +72,10 @@ class YouTubeAPI:
         }
 
     async def url(self, message: Message) -> Optional[str]:
-        """Extract YouTube URL from Pyrogram message (renamed from extract_url)"""
+        """Extract YouTube URL from Pyrogram message"""
         try:
+            logger.debug("Extracting URL from message")
+            
             # Check both message and replied message
             for msg in [message, message.reply_to_message]:
                 if not msg:
@@ -87,6 +89,7 @@ class YouTubeAPI:
                             if text:
                                 url = text[entity.offset:entity.offset + entity.length]
                                 if self.url_regex.match(url):
+                                    logger.debug(f"Found URL: {url}")
                                     return url
                 
                 # Check caption entities
@@ -95,15 +98,18 @@ class YouTubeAPI:
                         if entity.type == MessageEntityType.TEXT_LINK:
                             url = entity.url
                             if self.url_regex.match(url):
+                                logger.debug(f"Found URL in caption: {url}")
                                 return url
             
+            logger.debug("No valid YouTube URL found")
             return None
+            
         except Exception as e:
-            logger.error(f"URL extraction error: {str(e)}", exc_info=True)
+            logger.error(f"URL extraction failed: {str(e)}", exc_info=True)
             return None
 
     async def details(self, query: str) -> Tuple[Optional[Dict], str]:
-        """Get video details (renamed from process_query)"""
+        """Process YouTube URL or search query"""
         try:
             await self._rate_limit()
             
@@ -132,7 +138,29 @@ class YouTubeAPI:
                 # Handle search results
                 if 'entries' in info:
                     if not info['entries']:
-                        raise ValueError("No search results found")
+                        # Fallback to VideosSearch
+                        try:
+                            clean_query = query.replace('ytsearch:', '')
+                            results = VideosSearch(clean_query, limit=1)
+                            search_result = await results.next()
+                            if not search_result or not search_result.get('result'):
+                                return None, "No results found"
+                            
+                            video = search_result['result'][0]
+                            duration_parts = list(map(int, video['duration'].split(':')))
+                            duration_sec = duration_parts[0] * 60 + duration_parts[1] if len(duration_parts) == 2 else duration_parts[0]
+                            
+                            return {
+                                'id': video['id'],
+                                'title': video['title'],
+                                'duration': duration_sec,
+                                'thumbnail': video['thumbnails'][0]['url'].split('?')[0],
+                                'url': f"{self.base_url}{video['id']}"
+                            }, ""
+                        except Exception as search_error:
+                            logger.error(f"Search fallback failed: {str(search_error)}")
+                            return None, "Failed to process query"
+                    
                     info = info['entries'][0]
                 
                 return {
@@ -147,13 +175,13 @@ class YouTubeAPI:
             logger.error(f"YT-DLP Error: {str(e)}")
             if "Sign in to confirm" in str(e):
                 return None, "YouTube temporary block. Please try again later."
-            return None, "YouTube processing error"
+            return None, "Failed to process query"
         except Exception as e:
             logger.error(f"Processing error: {str(e)}", exc_info=True)
-            return None, "Failed to process request"
+            return None, "Failed to process query"
 
     async def video(self, video_id: str) -> Tuple[Optional[str], str]:
-        """Get video stream URL (renamed from get_stream_url)"""
+        """Get video stream URL"""
         try:
             await self._rate_limit()
             ydl_opts = self._get_ydl_opts(audio_only=False)
