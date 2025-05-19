@@ -59,11 +59,11 @@ class YouTubeAPI:
 
     async def url(self, message: Message) -> Optional[str]:
         try:
-            for msg in [message, message.reply_to_message]:
+            for msg in [message, getattr(message, "reply_to_message", None)]:
                 if not msg:
                     continue
-                entities = (msg.entities or []) + (msg.caption_entities or [])
-                text = msg.text or msg.caption
+                entities = (getattr(msg, "entities", None) or []) + (getattr(msg, "caption_entities", None) or [])
+                text = getattr(msg, "text", None) or getattr(msg, "caption", None)
                 if text and entities:
                     for entity in entities:
                         if entity.type == MessageEntityType.URL:
@@ -94,23 +94,30 @@ class YouTubeAPI:
                 info = await asyncio.to_thread(ydl.extract_info, query, download=False)
 
                 if not info:
-                    return None, "No results"
+                    return None, "No results, query did not return any info."
 
                 if 'entries' in info:
-                    info = info['entries'][0]
+                    entries = info['entries']
+                    if not entries:
+                        return None, "No results found for your query."
+                    info = entries[0]
                     if not info:
-                        return None, "No results"
+                        return None, "No results found in first search entry."
+
+                video_id = info.get('id')
+                if not video_id:
+                    return None, "No video id found in info."
 
                 return {
-                    'id': info['id'],
+                    'id': video_id,
                     'title': info.get('title', 'Unknown Title'),
                     'duration': info.get('duration', 0),
-                    'thumbnail': f"https://i.ytimg.com/vi/{info['id']}/hqdefault.jpg",
-                    'url': f"{self.base_url}{info['id']}"
+                    'thumbnail': f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg",
+                    'url': f"{self.base_url}{video_id}"
                 }, ""
         except Exception as e:
             logger.error(f"Failed to get video details: {e}", exc_info=True)
-            return None, "Failed to process query"
+            return None, f"Failed to process query: {e}"
 
     async def exists(self, query: str) -> bool:
         """Check if a YouTube video exists or is valid."""
@@ -142,6 +149,7 @@ class YouTubeAPI:
         try:
             await self._rate_limit()
             ydl_opts = self._get_ydl_opts(audio_only)
+            os.makedirs('downloads', exist_ok=True)
             ydl_opts['outtmpl'] = 'downloads/%(id)s.%(ext)s'
             if audio_only:
                 ydl_opts['postprocessors'] = [{
@@ -156,9 +164,11 @@ class YouTubeAPI:
                     download=True
                 )
                 path = ydl.prepare_filename(info)
+                # yt-dlp will already produce .mp3 if postprocessor runs successfully
                 if audio_only and not path.endswith('.mp3'):
                     new_path = os.path.splitext(path)[0] + '.mp3'
-                    os.rename(path, new_path)
+                    if os.path.exists(path):
+                        os.rename(path, new_path)
                     path = new_path
                 return path, ""
         except Exception as e:
