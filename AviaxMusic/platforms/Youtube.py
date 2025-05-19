@@ -12,7 +12,7 @@ from pyrogram.enums import MessageEntityType
 from pyrogram.types import Message
 from youtubesearchpython.__future__ import VideosSearch
 
-# Configure logging to show all errors
+# Configure logging
 logging.basicConfig(
     level=logging.DEBUG,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -20,7 +20,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-class YouTube:
+class YouTubeAPI:
     def __init__(self):
         self.base_url = "https://www.youtube.com/watch?v="
         self.url_pattern = re.compile(
@@ -68,8 +68,8 @@ class YouTube:
             'logger': logger
         }
 
-    async def extract_url(self, message: Message) -> Optional[str]:
-        """Extract YouTube URL from message with proper error handling"""
+    async def url(self, message: Message) -> Optional[str]:
+        """Extract YouTube URL from message"""
         try:
             logger.debug("Extracting URL from message")
             
