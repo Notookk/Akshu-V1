@@ -27,4 +27,3 @@ uvloop
 yt-dlp
 youtube-search
 youtube-search-python
-youtubesearchpython
