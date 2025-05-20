@@ -47,7 +47,6 @@ class YouTubeAPI:
             'quiet': True,
             'no_warnings': True,
             'geo_bypass': True,
-            'extract_flat': True,
             'force_ipv4': True,
             'socket_timeout': 30,
             'retries': 3,
@@ -96,7 +95,7 @@ class YouTubeAPI:
                 if not info:
                     return None, "No results, query did not return any info."
 
-                if 'entries' in info:
+                if 'entries' in info and isinstance(info['entries'], list):
                     entries = info['entries']
                     if not entries:
                         return None, "No results found for your query."
@@ -120,7 +119,6 @@ class YouTubeAPI:
             return None, f"Failed to process query: {e}"
 
     async def exists(self, query: str) -> bool:
-        """Check if a YouTube video exists or is valid."""
         try:
             details, err = await self.details(query)
             return details is not None
@@ -164,7 +162,6 @@ class YouTubeAPI:
                     download=True
                 )
                 path = ydl.prepare_filename(info)
-                # yt-dlp will already produce .mp3 if postprocessor runs successfully
                 if audio_only and not path.endswith('.mp3'):
                     new_path = os.path.splitext(path)[0] + '.mp3'
                     if os.path.exists(path):
