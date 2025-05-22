@@ -5,7 +5,7 @@ import random
 import re
 import sys
 import time
-from typing import Optional, Tuple, Dict, List
+from typing import Optional, Dict, Tuple, List
 import aiohttp
 from urllib.parse import quote
 
@@ -35,6 +35,9 @@ class YouTubeAPI:
         self.current_instance_index = 0
         self.last_request = 0
         self.request_delay = 2.0
+        self.headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        }
 
     async def _rate_limit(self) -> None:
         now = time.time()
@@ -54,7 +57,7 @@ class YouTubeAPI:
         for _ in range(len(self.invidious_instances)):
             base = self._get_next_instance()
             try:
-                async with aiohttp.ClientSession() as session:
+                async with aiohttp.ClientSession(headers=self.headers) as session:
                     url = f"{base}/api/v1/search?q={quote(query)}"
                     async with session.get(url, timeout=15) as resp:
                         if resp.status == 200:
@@ -66,8 +69,8 @@ class YouTubeAPI:
                                         'id': video.get('videoId'),
                                         'title': video.get('title', 'Unknown Title'),
                                         'duration': video.get('lengthSeconds', 0),
-                                        'thumbnail': f"https://i.ytimg.com/vi/{video.get('videoId')}/hqdefault.jpg",
-                                        'url': f"https://youtube.com/watch?v={video.get('videoId')}"
+                                        'thumbnail': f"{base}/vi/{video.get('videoId')}/hqdefault.jpg",
+                                        'url': f"{base}/watch?v={video.get('videoId')}"
                                     }
                         elif resp.status == 429:
                             await asyncio.sleep(1)
@@ -92,11 +95,11 @@ class YouTubeAPI:
                     try:
                         if entity.type == MessageEntityType.URL:
                             url = text[entity.offset:entity.offset + entity.length]
-                            if self.url_regex.fullmatch(url):
-                                return url
+                            if match := self.url_regex.fullmatch(url):
+                                return f"{self._get_next_instance()}/watch?v={match.group(5)}"
                         elif entity.type == MessageEntityType.TEXT_LINK:
-                            if self.url_regex.fullmatch(entity.url):
-                                return entity.url
+                            if match := self.url_regex.fullmatch(entity.url):
+                                return f"{self._get_next_instance()}/watch?v={match.group(5)}"
                     except Exception:
                         continue
             return None
@@ -108,10 +111,8 @@ class YouTubeAPI:
         try:
             await self._rate_limit()
 
-            if query.startswith("http") and self.url_regex.match(query):
-                match = self.url_regex.match(query)
-                if match:
-                    query = match.group(5)
+            if query.startswith("http") and (match := self.url_regex.match(query)):
+                query = match.group(5)
 
             video = await self._get_from_invidious(query)
             return (video, "") if video else (None, "No video found")
@@ -134,7 +135,7 @@ class YouTubeAPI:
             for _ in range(len(self.invidious_instances)):
                 base = self._get_next_instance()
                 try:
-                    async with aiohttp.ClientSession() as session:
+                    async with aiohttp.ClientSession(headers=self.headers) as session:
                         url = f"{base}/api/v1/videos/{video_id}"
                         async with session.get(url, timeout=15) as resp:
                             if resp.status == 200:
@@ -143,7 +144,7 @@ class YouTubeAPI:
                                     best = sorted(info['formatStreams'], key=lambda x: x.get('bitrate', 0), reverse=True)[0]
                                     return best.get('url'), ""
                 except Exception as e:
-                    logger.warning(f"Video stream failed on {base}: {str(e)}")
+                    logger.warning(f"Stream request failed on {base}: {str(e)}")
             return None, "Stream URL not found"
         except Exception as e:
             logger.error(f"Stream error: {str(e)}", exc_info=True)
@@ -155,7 +156,7 @@ class YouTubeAPI:
             for _ in range(len(self.invidious_instances)):
                 base = self._get_next_instance()
                 try:
-                    async with aiohttp.ClientSession() as session:
+                    async with aiohttp.ClientSession(headers=self.headers) as session:
                         url = f"{base}/api/v1/videos/{video_id}"
                         async with session.get(url, timeout=15) as resp:
                             if resp.status == 200:
@@ -164,14 +165,14 @@ class YouTubeAPI:
                                 filtered = [s for s in streams if 'url' in s and (s.get('type', '').startswith('audio/') if audio_only else True)]
                                 if filtered:
                                     best = sorted(filtered, key=lambda x: x.get('bitrate', 0), reverse=True)[0]
-                                    url = best['url']
+                                    stream_url = best['url']
 
                                     os.makedirs('downloads', exist_ok=True)
                                     timestamp = int(time.time())
                                     ext = 'mp3' if audio_only else 'mp4'
                                     filename = os.path.join('downloads', f'{video_id}_{timestamp}.{ext}')
 
-                                    async with session.get(url) as r:
+                                    async with session.get(stream_url) as r:
                                         with open(filename, 'wb') as f:
                                             while True:
                                                 chunk = await r.content.read(1024)
