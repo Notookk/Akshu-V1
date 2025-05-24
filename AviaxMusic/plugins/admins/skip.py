@@ -148,7 +148,7 @@ async def skip(cli, message: Message, _, chat_id):
         except:
             return await mystic.edit_text(_["call_6"])
         button = stream_markup(_, chat_id)
-        img = await gen_thumb(videoid, user)
+        img = await gen_thumb(videoid, user, app)
         run = await message.reply_photo(
             photo=img,
             caption=_["stream_1"].format(
