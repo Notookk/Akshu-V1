@@ -44,7 +44,28 @@ def add_corners(im):
     mask = ImageChops.darker(mask, im.split()[-1])
     im.putalpha(mask)
 
-async def gen_thumb(videoid, user_id):
+async def get_user_profile_pic(app, user_id):
+    """
+    Attempts to download the user's profile photo.
+    Returns the path to the downloaded photo, or bot.jpg if unavailable.
+    """
+    try:
+        user = await app.get_users(user_id)
+        if hasattr(user, "photo") and hasattr(user.photo, "big_file_id"):
+            try:
+                photo_path = await app.download_media(
+                    user.photo.big_file_id,
+                    file_name=f"cache/{sanitize_filename(str(user_id))}_photo.jpg"
+                )
+                if photo_path and os.path.isfile(photo_path):
+                    return photo_path
+            except Exception as e:
+                LOGGER.error(f"Could not download user photo: {e}")
+    except Exception as e:
+        LOGGER.error(f"Could not fetch user: {e}")
+    return FAILED
+
+async def gen_thumb(videoid, user_id, app):
     try:
         safe_user_id = sanitize_filename(str(user_id))
         safe_videoid = sanitize_filename(str(videoid))
@@ -57,8 +78,9 @@ async def gen_thumb(videoid, user_id):
         if os.path.isfile(cached_path):
             return cached_path
 
-        default_image = "AviaxMusic/assets/bot.jpg"
-        if not file_exists(default_image):
+        # Get user profile pic or fallback
+        user_image_path = await get_user_profile_pic(app, user_id)
+        if not file_exists(user_image_path):
             return None
 
         url = f"https://www.youtube.com/watch?v={videoid}"
@@ -88,9 +110,9 @@ async def gen_thumb(videoid, user_id):
             except Exception as e:
                 LOGGER.error(f"Failed to download thumbnail: {e}")
 
-        # Create rounded avatar
+        # Create rounded avatar (user profile or fallback)
         try:
-            xy = Image.open(default_image)
+            xy = Image.open(user_image_path)
             a = Image.new("L", [640, 640], 0)
             b = ImageDraw.Draw(a)
             b.pieslice([(0, 0), (640, 640)], 0, 360, fill=255, outline="white")
@@ -149,7 +171,6 @@ async def gen_thumb(videoid, user_id):
             background.paste(x, (710, 427), mask=x)
             background.paste(image3, (0, 0), mask=image3)
 
-            # Font checks
             font_path1 = "AviaxMusic/assets/font2.ttf"
             font_path2 = "AviaxMusic/assets/font.ttf"
             if not file_exists(font_path1) or not file_exists(font_path2):
@@ -211,7 +232,7 @@ async def gen_thumb(videoid, user_id):
         LOGGER.error(f"Error generating thumbnail: {e}")
         return FAILED if file_exists(FAILED) else None
 
-async def gen_qthumb(videoid, user_id):
+async def gen_qthumb(videoid, user_id, app):
     try:
         safe_user_id = sanitize_filename(str(user_id))
         safe_videoid = sanitize_filename(str(videoid))
@@ -224,8 +245,9 @@ async def gen_qthumb(videoid, user_id):
         if os.path.isfile(cached_path):
             return cached_path
 
-        default_image = "AviaxMusic/assets/bot.jpg"
-        if not file_exists(default_image):
+        # Get user profile pic or fallback
+        user_image_path = await get_user_profile_pic(app, user_id)
+        if not file_exists(user_image_path):
             return None
 
         url = f"https://www.youtube.com/watch?v={videoid}"
@@ -255,9 +277,9 @@ async def gen_qthumb(videoid, user_id):
             except Exception as e:
                 LOGGER.error(f"Failed to download thumbnail: {e}")
 
-        # Create rounded avatar
+        # Create rounded avatar (user profile or fallback)
         try:
-            xy = Image.open(default_image)
+            xy = Image.open(user_image_path)
             a = Image.new("L", [640, 640], 0)
             b = ImageDraw.Draw(a)
             b.pieslice([(0, 0), (640, 640)], 0, 360, fill=255, outline="white")
@@ -315,7 +337,6 @@ async def gen_qthumb(videoid, user_id):
             background.paste(x, (710, 427), mask=x)
             background.paste(image3, (0, 0), mask=image3)
 
-            # Font checks
             font_path1 = "AviaxMusic/assets/font2.ttf"
             font_path2 = "AviaxMusic/assets/font.ttf"
             if not file_exists(font_path1) or not file_exists(font_path2):
