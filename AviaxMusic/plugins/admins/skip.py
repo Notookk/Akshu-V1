@@ -9,7 +9,7 @@ from AviaxMusic.utils.database import get_loop
 from AviaxMusic.utils.decorators import AdminRightsCheck
 from AviaxMusic.utils.inline import close_markup, stream_markup
 from AviaxMusic.utils.stream.autoclear import auto_clean
-from AviaxMusic.utils.thumbnails import gen_thumb
+from AviaxMusic.utils.thumbnails import gen_thumb, gen_qthumb
 from config import BANNED_USERS
 
 
@@ -115,7 +115,7 @@ async def skip(cli, message: Message, _, chat_id):
         except:
             return await message.reply_text(_["call_6"])
         button = stream_markup(_, chat_id)
-        img = await gen_thumb(videoid, user)
+        img = await gen_thumb(videoid, user, app)
         run = await message.reply_photo(
             photo=img,
             caption=_["stream_1"].format(
@@ -217,7 +217,7 @@ async def skip(cli, message: Message, _, chat_id):
             db[chat_id][0]["markup"] = "tg"
         else:
             button = stream_markup(_, chat_id)
-            img = await gen_thumb(videoid, user)
+            img = await gen_thumb(videoid, user, app)
             run = await message.reply_photo(
                 photo=img,
                 caption=_["stream_1"].format(
