@@ -34,7 +34,7 @@ class MockApp:
 
 app = MockApp()
 
-FAILED = "bot.png"  # Make sure this file exists, or adjust to your preferred fallback image
+FAILED = "AviaxMusic/assets/bot.jpg"  # Or another real image that exists  # Make sure this file exists, or adjust to your preferred fallback image
 
 def changeImageSize(maxWidth, maxHeight, image):
     widthRatio = maxWidth / image.size[0]
