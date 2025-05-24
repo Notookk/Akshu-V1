@@ -34,7 +34,7 @@ class MockApp:
 
 app = MockApp()
 
-FAILED = "bot.png"  # Default failed image path
+FAILED = "bot.png"  # Make sure this file exists, or adjust to your preferred fallback image
 
 def changeImageSize(maxWidth, maxHeight, image):
     widthRatio = maxWidth / image.size[0]
@@ -95,6 +95,7 @@ async def gen_thumb(videoid, user_id):
         a = Image.new("L", [640, 640], 0)
         b = ImageDraw.Draw(a)
         b.pieslice([(0, 0), (640, 640)], 0, 360, fill=255, outline="white")
+        # --- Fix: Ensure a and xy are the same size before stacking ---
         if a.size != xy.size:
             a = a.resize(xy.size, Image.LANCZOS)
         c = np.array(xy)
@@ -163,7 +164,7 @@ async def gen_thumb(videoid, user_id):
                     stroke_fill="white",
                     font=font,
                 )
-            if para[1]:
+            if len(para) > 1 and para[1]:
                 text_w, text_h = draw.textsize(f"{para[1]}", font=font)
                 draw.text(
                     ((1280 - text_w) / 2, 580),
@@ -235,6 +236,9 @@ async def gen_qthumb(videoid, user_id):
         a = Image.new("L", [640, 640], 0)
         b = ImageDraw.Draw(a)
         b.pieslice([(0, 0), (640, 640)], 0, 360, fill=255, outline="white")
+        # --- Fix: Ensure a and xy are the same size before stacking ---
+        if a.size != xy.size:
+            a = a.resize(xy.size, Image.LANCZOS)
         c = np.array(xy)
         d = np.array(a)
         e = np.dstack((c, d))
@@ -301,7 +305,7 @@ async def gen_qthumb(videoid, user_id):
                     stroke_fill="white",
                     font=font,
                 )
-            if para[1]:
+            if len(para) > 1 and para[1]:
                 text_w, text_h = draw.textsize(f"{para[1]}", font=font)
                 draw.text(
                     ((1280 - text_w) / 2, 580),
