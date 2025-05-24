@@ -16,23 +16,15 @@ logging.basicConfig(
 )
 LOGGER = logging.getLogger(__name__)
 
-# Pyrogram client mock (replace with actual client if needed)
-class MockApp:
-    async def download_media(self, *args, **kwargs):
-        return "AviaxMusic/assets/bot.jpg"  # Path to default bot image
+def sanitize_filename(filename):
+    # Remove or replace any disallowed characters for filenames
+    return re.sub(r'[\\/*?:"<>|]', "_", filename)
 
-    async def get_users(self, user_id):
-        class User:
-            @property
-            def photo(self):
-                class Photo:
-                    @property
-                    def big_file_id(self):
-                        return "default_photo_id"
-                return Photo()
-        return User()
-
-app = MockApp()
+def file_exists(path):
+    if not os.path.isfile(path):
+        LOGGER.error(f"Required file does not exist: {path}")
+        return False
+    return True
 
 FAILED = "AviaxMusic/assets/bot.jpg"  # Make sure this file exists
 
@@ -52,25 +44,24 @@ def add_corners(im):
     mask = ImageChops.darker(mask, im.split()[-1])
     im.putalpha(mask)
 
-def file_exists(path):
-    if not os.path.isfile(path):
-        LOGGER.error(f"Required file does not exist: {path}")
-        return False
-    return True
-
 async def gen_thumb(videoid, user_id):
     try:
-        cached_path = f"cache/{videoid}_{user_id}.png"
+        safe_user_id = sanitize_filename(str(user_id))
+        safe_videoid = sanitize_filename(str(videoid))
+        cached_path = f"cache/{safe_videoid}_{safe_user_id}.png"
+        thumb_path = f"cache/thumb{safe_videoid}.png"
+        chop_path = f"cache/chop{safe_videoid}.png"
+        cropped_path = f"cache/cropped{safe_videoid}.png"
+        temp_path = f"cache/temp{safe_videoid}.png"
+
         if os.path.isfile(cached_path):
             return cached_path
 
-        # Check for default image upfront
         default_image = "AviaxMusic/assets/bot.jpg"
         if not file_exists(default_image):
             return None
 
         url = f"https://www.youtube.com/watch?v={videoid}"
-        # Get video info
         try:
             results = VideosSearch(url, limit=1)
             data = (await results.next())["result"]
@@ -92,7 +83,7 @@ async def gen_thumb(videoid, user_id):
                 async with aiohttp.ClientSession() as session:
                     async with session.get(thumbnail) as resp:
                         if resp.status == 200:
-                            async with aiofiles.open(f"cache/thumb{videoid}.png", mode="wb") as f:
+                            async with aiofiles.open(thumb_path, mode="wb") as f:
                                 await f.write(await resp.read())
             except Exception as e:
                 LOGGER.error(f"Failed to download thumbnail: {e}")
@@ -115,7 +106,6 @@ async def gen_thumb(videoid, user_id):
             return FAILED if file_exists(FAILED) else None
 
         # Use downloaded YouTube thumbnail or fallback to default
-        thumb_path = f"cache/thumb{videoid}.png"
         if not os.path.isfile(thumb_path):
             LOGGER.error(f"Thumbnail image not found: {thumb_path}, using default avatar.")
             return FAILED if file_exists(FAILED) else None
@@ -134,7 +124,7 @@ async def gen_thumb(videoid, user_id):
 
             image3 = changeImageSize(1280, 720, bg)
             image5 = image3.convert("RGBA")
-            Image.alpha_composite(background, image5).save(f"cache/temp{videoid}.png")
+            Image.alpha_composite(background, image5).save(temp_path)
 
             Xcenter = youtube.width / 2
             Ycenter = youtube.height / 2
@@ -144,10 +134,9 @@ async def gen_thumb(videoid, user_id):
             y2 = Ycenter + 250
             logo = youtube.crop((x1, y1, x2, y2))
             logo.thumbnail((520, 520), Image.LANCZOS)
-            logo.save(f"cache/chop{videoid}.png")
-            cropped_path = f"cache/cropped{videoid}.png"
+            logo.save(chop_path)
             if not os.path.isfile(cropped_path):
-                im = Image.open(f"cache/chop{videoid}.png").convert("RGBA")
+                im = Image.open(chop_path).convert("RGBA")
                 add_corners(im)
                 im.save(cropped_path)
 
@@ -155,7 +144,7 @@ async def gen_thumb(videoid, user_id):
             logo = crop_img.convert("RGBA")
             logo.thumbnail((365, 365), Image.LANCZOS)
             width = int((1280 - 365) / 2)
-            background = Image.open(f"cache/temp{videoid}.png")
+            background = Image.open(temp_path)
             background.paste(logo, (width + 2, 138), mask=logo)
             background.paste(x, (710, 427), mask=x)
             background.paste(image3, (0, 0), mask=image3)
@@ -224,17 +213,22 @@ async def gen_thumb(videoid, user_id):
 
 async def gen_qthumb(videoid, user_id):
     try:
-        cached_path = f"cache/que{videoid}_{user_id}.png"
+        safe_user_id = sanitize_filename(str(user_id))
+        safe_videoid = sanitize_filename(str(videoid))
+        cached_path = f"cache/que{safe_videoid}_{safe_user_id}.png"
+        thumb_path = f"cache/thumb{safe_videoid}.png"
+        chop_path = f"cache/chop{safe_videoid}.png"
+        cropped_path = f"cache/cropped{safe_videoid}.png"
+        temp_path = f"cache/temp{safe_videoid}.png"
+
         if os.path.isfile(cached_path):
             return cached_path
 
-        # Check for default image upfront
         default_image = "AviaxMusic/assets/bot.jpg"
         if not file_exists(default_image):
             return None
 
         url = f"https://www.youtube.com/watch?v={videoid}"
-        # Get video info
         try:
             results = VideosSearch(url, limit=1)
             data = (await results.next())["result"]
@@ -256,7 +250,7 @@ async def gen_qthumb(videoid, user_id):
                 async with aiohttp.ClientSession() as session:
                     async with session.get(thumbnail) as resp:
                         if resp.status == 200:
-                            async with aiofiles.open(f"cache/thumb{videoid}.png", mode="wb") as f:
+                            async with aiofiles.open(thumb_path, mode="wb") as f:
                                 await f.write(await resp.read())
             except Exception as e:
                 LOGGER.error(f"Failed to download thumbnail: {e}")
@@ -278,8 +272,6 @@ async def gen_qthumb(videoid, user_id):
             LOGGER.error(f"Error creating avatar: {e}")
             return FAILED if file_exists(FAILED) else None
 
-        # Use downloaded YouTube thumbnail or fallback to default
-        thumb_path = f"cache/thumb{videoid}.png"
         if not os.path.isfile(thumb_path):
             LOGGER.error(f"Thumbnail image not found: {thumb_path}, using default avatar.")
             return FAILED if file_exists(FAILED) else None
@@ -298,7 +290,7 @@ async def gen_qthumb(videoid, user_id):
 
             image3 = changeImageSize(1280, 720, bg)
             image5 = image3.convert("RGBA")
-            Image.alpha_composite(background, image5).save(f"cache/temp{videoid}.png")
+            Image.alpha_composite(background, image5).save(temp_path)
 
             Xcenter = youtube.width / 2
             Ycenter = youtube.height / 2
@@ -308,10 +300,9 @@ async def gen_qthumb(videoid, user_id):
             y2 = Ycenter + 250
             logo = youtube.crop((x1, y1, x2, y2))
             logo.thumbnail((520, 520), Image.LANCZOS)
-            logo.save(f"cache/chop{videoid}.png")
-            cropped_path = f"cache/cropped{videoid}.png"
+            logo.save(chop_path)
             if not os.path.isfile(cropped_path):
-                im = Image.open(f"cache/chop{videoid}.png").convert("RGBA")
+                im = Image.open(chop_path).convert("RGBA")
                 add_corners(im)
                 im.save(cropped_path)
 
@@ -319,7 +310,7 @@ async def gen_qthumb(videoid, user_id):
             logo = crop_img.convert("RGBA")
             logo.thumbnail((365, 365), Image.LANCZOS)
             width = int((1280 - 365) / 2)
-            background = Image.open(f"cache/temp{videoid}.png")
+            background = Image.open(temp_path)
             background.paste(logo, (width + 2, 138), mask=logo)
             background.paste(x, (710, 427), mask=x)
             background.paste(image3, (0, 0), mask=image3)
