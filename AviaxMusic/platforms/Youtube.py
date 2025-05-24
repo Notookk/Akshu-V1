@@ -1,219 +1,337 @@
-import asyncio
-import logging
-import os
-import random
-import re
-import sys
-import time
-from typing import Optional, Dict, Tuple, List
-import aiohttp
-from urllib.parse import quote
+import asyncio, httpx, os, re, yt_dlp
 
-from pyrogram.enums import MessageEntityType
+from typing import Union
 from pyrogram.types import Message
+from pyrogram.enums import MessageEntityType
+from youtubesearchpython.__future__ import VideosSearch
 
-logging.basicConfig(
-    level=logging.DEBUG,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    stream=sys.stdout
-)
-logger = logging.getLogger(__name__)
+
+def time_to_seconds(time):
+    stringt = str(time)
+    return sum(int(x) * 60**i for i, x in enumerate(reversed(stringt.split(":"))))
+
+
+async def shell_cmd(cmd):
+    proc = await asyncio.create_subprocess_shell(
+        cmd,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    out, errorz = await proc.communicate()
+    if errorz:
+        if "unavailable videos are hidden" in (errorz.decode("utf-8")).lower():
+            return out.decode("utf-8")
+        else:
+            return errorz.decode("utf-8")
+    return out.decode("utf-8")
+
+
+
+async def get_stream_url(query, video=False):
+    api_url = "https://538d40d1-8d44-4ca5-8984-3d5f16d8d966-00-2z3785n0bjxro.sisko.replit.dev/youtube"  # Or your VPS IP if not local
+    api_key = "jaydip"
+    
+    async with httpx.AsyncClient(timeout=60) as client:
+        params = {
+            "query": query,
+            "video": str(video).lower(),  # This line is VERY important
+            "api_key": api_key
+        }
+        response = await client.get(api_url, params=params)
+        if response.status_code != 200:
+            print("API Error:", response.status_code, response.text)
+            return ""
+        info = response.json()
+        return info.get("stream_url")
+
+
 
 class YouTubeAPI:
     def __init__(self):
-        # Extended regex to match more YouTube formats
-        self.url_regex = re.compile(
-            r"(?:https?://)?(?:www\.)?(?:youtube\.com|youtu\.be)/(?:watch\?v=|embed/|v/|shorts/|.+\?v=)?([A-Za-z0-9_-]{11})"
-        )
-        self.invidious_instances = [
-            "https://yewtu.be",
-            "https://inv.odyssey346.dev",
-            "https://invidious.flokinet.to",
-            "https://vid.puffyan.us",
-            "https://inv.tux.pizza",
-        ]
-        self.current_instance_index = 0
-        self.last_request = 0
-        self.request_delay = 2.0
-        self.headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-        }
+        self.base = "https://www.youtube.com/watch?v="
+        self.regex = r"(?:youtube\.com|youtu\.be)"
+        self.status = "https://www.youtube.com/oembed?url="
+        self.listbase = "https://youtube.com/playlist?list="
+        self.reg = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
 
-    async def _rate_limit(self) -> None:
-        now = time.time()
-        elapsed = now - self.last_request
-        if elapsed < self.request_delay:
-            delay = self.request_delay - elapsed + random.uniform(0, 0.5)
-            await asyncio.sleep(delay)
-        self.last_request = time.time()
-        self.request_delay = random.uniform(1.5, 3.0)
-
-    def _get_next_instance(self) -> str:
-        instance = self.invidious_instances[self.current_instance_index]
-        self.current_instance_index = (self.current_instance_index + 1) % len(self.invidious_instances)
-        return instance
-
-    def extract_video_id(self, url_or_query: str) -> Optional[str]:
-        """
-        Extracts a YouTube video ID from a URL or returns the string if it's already an ID.
-        """
-        # Direct ID
-        if re.match(r"^[A-Za-z0-9_-]{11}$", url_or_query):
-            return url_or_query
-        # URL formats
-        match = self.url_regex.search(url_or_query)
-        if match:
-            return match.group(1)
-        return None
-
-    async def _get_from_invidious(self, query: str) -> Optional[Dict]:
-        for _ in range(len(self.invidious_instances)):
-            base = self._get_next_instance()
-            try:
-                async with aiohttp.ClientSession(headers=self.headers) as session:
-                    url = f"{base}/api/v1/search?q={quote(query)}"
-                    async with session.get(url, timeout=15) as resp:
-                        if resp.status == 200:
-                            results = await resp.json()
-                            if results and isinstance(results, list):
-                                video = next((v for v in results if v.get("type") == "video"), None)
-                                if video:
-                                    return {
-                                        "id": video.get("videoId"),
-                                        "title": video.get("title", "Unknown Title"),
-                                        "duration": video.get("lengthSeconds", 0),
-                                        "thumbnail": f"{base}/vi/{video.get('videoId')}/hqdefault.jpg",
-                                        "url": f"{base}/watch?v={video.get('videoId')}",
-                                    }
-                        elif resp.status == 429:
-                            logger.warning(f"429 Too Many Requests on {base}, sleeping...")
-                            await asyncio.sleep(1)
-                        else:
-                            logger.warning(f"Invidious {base} returned HTTP {resp.status}")
-            except Exception as e:
-                logger.warning(f"Invidious request failed on {base}: {str(e)}")
-        return None
-
-    async def url(self, message: Message) -> Optional[str]:
-        try:
-            messages_to_check = [message]
-            if message.reply_to_message:
-                messages_to_check.append(message.reply_to_message)
-            for msg in messages_to_check:
-                if not msg:
-                    continue
-                text = msg.text or msg.caption or ""
-                # Try to extract from entities
-                entities = (msg.entities or []) + (msg.caption_entities or [])
-                for entity in entities:
-                    try:
-                        if entity.type == MessageEntityType.URL:
-                            url = text[entity.offset:entity.offset + entity.length]
-                            vid = self.extract_video_id(url)
-                            if vid:
-                                return vid
-                        elif entity.type == MessageEntityType.TEXT_LINK:
-                            vid = self.extract_video_id(entity.url)
-                            if vid:
-                                return vid
-                    except Exception:
-                        continue
-                # Fallback: search in raw text
-                vid = self.extract_video_id(text)
-                if vid:
-                    return vid
-            return None
-        except Exception as e:
-            logger.error(f"URL extraction failed: {str(e)}", exc_info=True)
-            return None
-
-    async def details(self, query: str) -> Tuple[Optional[Dict], str]:
-        try:
-            await self._rate_limit()
-            vid = self.extract_video_id(query)
-            search_term = vid if vid else query
-            video = await self._get_from_invidious(search_term)
-            return (video, "") if video else (None, "No video found or Invidious unavailable")
-        except Exception as e:
-            logger.error(f"Failed to process query: {str(e)}", exc_info=True)
-            return None, f"Failed to process query: {str(e)}"
-
-    async def exists(self, query: str) -> bool:
-        try:
-            details, _ = await self.details(query)
-            return details is not None
-        except Exception as e:
-            logger.error(f"Exists check failed: {str(e)}", exc_info=True)
+    async def exists(self, link: str, videoid: Union[bool, str] = None):
+        if videoid:
+            link = self.base + link
+        if re.search(self.regex, link):
+            return True
+        else:
             return False
 
-    async def video(self, video_id: str) -> Tuple[Optional[str], str]:
-        try:
-            await self._rate_limit()
-            vid = self.extract_video_id(video_id)
-            if not vid:
-                return None, "Invalid YouTube video ID or URL."
-            for _ in range(len(self.invidious_instances)):
-                base = self._get_next_instance()
-                try:
-                    async with aiohttp.ClientSession(headers=self.headers) as session:
-                        url = f"{base}/api/v1/videos/{vid}"
-                        async with session.get(url, timeout=15) as resp:
-                            if resp.status == 200:
-                                info = await resp.json()
-                                if info.get("formatStreams"):
-                                    best = sorted(info["formatStreams"], key=lambda x: x.get("bitrate", 0), reverse=True)[0]
-                                    return best.get("url"), ""
-                            elif resp.status == 429:
-                                logger.warning(f"429 Too Many Requests on {base}, sleeping...")
-                                await asyncio.sleep(1)
-                            else:
-                                logger.warning(f"Invidious {base} returned HTTP {resp.status}")
-                except Exception as e:
-                    logger.warning(f"Stream request failed on {base}: {str(e)}")
-            return None, "Stream URL not found or Invidious unavailable"
-        except Exception as e:
-            logger.error(f"Stream error: {str(e)}", exc_info=True)
-            return None, f"Stream error: {str(e)}"
+    async def url(self, message_1: Message) -> Union[str, None]:
+        messages = [message_1]
+        if message_1.reply_to_message:
+            messages.append(message_1.reply_to_message)
+        text = ""
+        offset = None
+        length = None
+        for message in messages:
+            if offset:
+                break
+            if message.entities:
+                for entity in message.entities:
+                    if entity.type == MessageEntityType.URL:
+                        text = message.text or message.caption
+                        offset, length = entity.offset, entity.length
+                        break
+            elif message.caption_entities:
+                for entity in message.caption_entities:
+                    if entity.type == MessageEntityType.TEXT_LINK:
+                        return entity.url
+        if offset in (None,):
+            return None
+        return text[offset : offset + length]
 
-    async def download(self, video_id: str, audio_only: bool = True) -> Tuple[Optional[str], str]:
+    async def details(self, link: str, videoid: Union[bool, str] = None):
+        if videoid:
+            link = self.base + link
+        if "&" in link:
+            link = link.split("&")[0]
+        results = VideosSearch(link, limit=1)
+        for result in (await results.next())["result"]:
+            title = result["title"]
+            duration_min = result["duration"]
+            thumbnail = result["thumbnails"][0]["url"].split("?")[0]
+            vidid = result["id"]
+            if str(duration_min) == "None":
+                duration_sec = 0
+            else:
+                duration_sec = int(time_to_seconds(duration_min))
+        return title, duration_min, duration_sec, thumbnail, vidid
+
+    async def title(self, link: str, videoid: Union[bool, str] = None):
+        if videoid:
+            link = self.base + link
+        if "&" in link:
+            link = link.split("&")[0]
+        results = VideosSearch(link, limit=1)
+        for result in (await results.next())["result"]:
+            title = result["title"]
+        return title
+
+    async def duration(self, link: str, videoid: Union[bool, str] = None):
+        if videoid:
+            link = self.base + link
+        if "&" in link:
+            link = link.split("&")[0]
+        results = VideosSearch(link, limit=1)
+        for result in (await results.next())["result"]:
+            duration = result["duration"]
+        return duration
+
+    async def thumbnail(self, link: str, videoid: Union[bool, str] = None):
+        if videoid:
+            link = self.base + link
+        if "&" in link:
+            link = link.split("&")[0]
+        results = VideosSearch(link, limit=1)
+        for result in (await results.next())["result"]:
+            thumbnail = result["thumbnails"][0]["url"].split("?")[0]
+        return thumbnail
+
+    async def video(self, link: str, videoid: Union[bool, str] = None):
+        if videoid:
+            link = self.base + link
+        if "&" in link:
+            link = link.split("&")[0]
+            
+        return await get_stream_url(link, True)
+        
+
+    async def playlist(self, link, limit, user_id, videoid: Union[bool, str] = None):
+        if videoid:
+            link = self.listbase + link
+        if "&" in link:
+            link = link.split("&")[0]
+        playlist = await shell_cmd(
+            f"yt-dlp -i --get-id --flat-playlist --playlist-end {limit} --skip-download {link}"
+        )
         try:
-            await self._rate_limit()
-            vid = self.extract_video_id(video_id)
-            if not vid:
-                return None, "Invalid YouTube video ID or URL."
-            for _ in range(len(self.invidious_instances)):
-                base = self._get_next_instance()
+            result = playlist.split("\n")
+            for key in result:
+                if key == "":
+                    result.remove(key)
+        except:
+            result = []
+        return result
+
+    async def track(self, link: str, videoid: Union[bool, str] = None):
+        if videoid:
+            link = self.base + link
+        if "&" in link:
+            link = link.split("&")[0]
+        results = VideosSearch(link, limit=1)
+        for result in (await results.next())["result"]:
+            title = result["title"]
+            duration_min = result["duration"]
+            vidid = result["id"]
+            yturl = result["link"]
+            thumbnail = result["thumbnails"][0]["url"].split("?")[0]
+        track_details = {
+            "title": title,
+            "link": yturl,
+            "vidid": vidid,
+            "duration_min": duration_min,
+            "thumb": thumbnail,
+        }
+        return track_details, vidid
+
+    async def formats(self, link: str, videoid: Union[bool, str] = None):
+        if videoid:
+            link = self.base + link
+        if "&" in link:
+            link = link.split("&")[0]
+        ytdl_opts = {"quiet": True}
+        ydl = yt_dlp.YoutubeDL(ytdl_opts)
+        with ydl:
+            formats_available = []
+            r = ydl.extract_info(link, download=False)
+            for format in r["formats"]:
                 try:
-                    async with aiohttp.ClientSession(headers=self.headers) as session:
-                        url = f"{base}/api/v1/videos/{vid}"
-                        async with session.get(url, timeout=15) as resp:
-                            if resp.status == 200:
-                                info = await resp.json()
-                                streams = info.get("adaptiveFormats" if audio_only else "formatStreams", [])
-                                filtered = [s for s in streams if "url" in s and (s.get("type", "").startswith("audio/") if audio_only else True)]
-                                if filtered:
-                                    best = sorted(filtered, key=lambda x: x.get("bitrate", 0), reverse=True)[0]
-                                    stream_url = best["url"]
-                                    os.makedirs("downloads", exist_ok=True)
-                                    timestamp = int(time.time())
-                                    ext = "mp3" if audio_only else "mp4"
-                                    filename = os.path.join("downloads", f"{vid}_{timestamp}.{ext}")
-                                    # Download using aiohttp stream, safer file writing
-                                    async with session.get(stream_url) as r:
-                                        with open(filename, "wb") as f:
-                                            async for chunk in r.content.iter_chunked(4096):
-                                                if not chunk:
-                                                    break
-                                                f.write(chunk)
-                                    return filename, ""
-                            elif resp.status == 429:
-                                logger.warning(f"429 Too Many Requests on {base}, sleeping...")
-                                await asyncio.sleep(1)
-                            else:
-                                logger.warning(f"Invidious {base} returned HTTP {resp.status}")
-                except Exception as e:
-                    logger.warning(f"Download failed on {base}: {str(e)}")
-            return None, "Failed to download (no available streams or Invidious unavailable)"
-        except Exception as e:
-            logger.error(f"Download error: {str(e)}", exc_info=True)
-            return None, f"Download error: {str(e)}"
+                    str(format["format"])
+                except:
+                    continue
+                if not "dash" in str(format["format"]).lower():
+                    try:
+                        format["format"]
+                        format["filesize"]
+                        format["format_id"]
+                        format["ext"]
+                        format["format_note"]
+                    except:
+                        continue
+                    formats_available.append(
+                        {
+                            "format": format["format"],
+                            "filesize": format["filesize"],
+                            "format_id": format["format_id"],
+                            "ext": format["ext"],
+                            "format_note": format["format_note"],
+                            "yturl": link,
+                        }
+                    )
+        return formats_available, link
+
+    async def slider(
+        self,
+        link: str,
+        query_type: int,
+        videoid: Union[bool, str] = None,
+    ):
+        if videoid:
+            link = self.base + link
+        if "&" in link:
+            link = link.split("&")[0]
+        a = VideosSearch(link, limit=10)
+        result = (await a.next()).get("result")
+        title = result[query_type]["title"]
+        duration_min = result[query_type]["duration"]
+        vidid = result[query_type]["id"]
+        thumbnail = result[query_type]["thumbnails"][0]["url"].split("?")[0]
+        return title, duration_min, thumbnail, vidid
+
+    async def download(
+        self,
+        link: str,
+        mystic,
+        video: Union[bool, str] = None,
+        videoid: Union[bool, str] = None,
+        songaudio: Union[bool, str] = None,
+        songvideo: Union[bool, str] = None,
+        format_id: Union[bool, str] = None,
+        title: Union[bool, str] = None,
+    ) -> str:
+        if videoid:
+            link = self.base + link
+        loop = asyncio.get_running_loop()
+
+        def audio_dl():
+            ydl_optssx = {
+                "format": "bestaudio/best",
+                "outtmpl": "downloads/%(id)s.%(ext)s",
+                "geo_bypass": True,
+                "nocheckcertificate": True,
+                "quiet": True,
+                "no_warnings": True,
+            }
+            x = yt_dlp.YoutubeDL(ydl_optssx)
+            info = x.extract_info(link, False)
+            xyz = os.path.join("downloads", f"{info['id']}.{info['ext']}")
+            if os.path.exists(xyz):
+                return xyz
+            x.download([link])
+            return xyz
+
+        def video_dl():
+            ydl_optssx = {
+                "format": "(bestvideo[height<=?720][width<=?1280][ext=mp4])+(bestaudio[ext=m4a])",
+                "outtmpl": "downloads/%(id)s.%(ext)s",
+                "geo_bypass": True,
+                "nocheckcertificate": True,
+                "quiet": True,
+                "no_warnings": True,
+            }
+            x = yt_dlp.YoutubeDL(ydl_optssx)
+            info = x.extract_info(link, False)
+            xyz = os.path.join("downloads", f"{info['id']}.{info['ext']}")
+            if os.path.exists(xyz):
+                return xyz
+            x.download([link])
+            return xyz
+
+        def song_video_dl():
+            formats = f"{format_id}+140"
+            fpath = f"downloads/{title}"
+            ydl_optssx = {
+                "format": formats,
+                "outtmpl": fpath,
+                "geo_bypass": True,
+                "nocheckcertificate": True,
+                "quiet": True,
+                "no_warnings": True,
+                "prefer_ffmpeg": True,
+                "merge_output_format": "mp4",
+            }
+            x = yt_dlp.YoutubeDL(ydl_optssx)
+            x.download([link])
+
+        def song_audio_dl():
+            fpath = f"downloads/{title}.%(ext)s"
+            ydl_optssx = {
+                "format": format_id,
+                "outtmpl": fpath,
+                "geo_bypass": True,
+                "nocheckcertificate": True,
+                "quiet": True,
+                "no_warnings": True,
+                "prefer_ffmpeg": True,
+                "postprocessors": [
+                    {
+                        "key": "FFmpegExtractAudio",
+                        "preferredcodec": "mp3",
+                        "preferredquality": "192",
+                    }
+                ],
+            }
+            x = yt_dlp.YoutubeDL(ydl_optssx)
+            x.download([link])
+
+        if songvideo:
+            await loop.run_in_executor(None, song_video_dl)
+            fpath = f"downloads/{title}.mp4"
+            return fpath
+        elif songaudio:
+            await loop.run_in_executor(None, song_audio_dl)
+            fpath = f"downloads/{title}.mp3"
+            return fpath
+        elif video:
+            downloaded_file = await get_stream_url(link, True)
+            direct = None
+        else:
+            direct = None
+            downloaded_file = await get_stream_url(link, False)
+        return downloaded_file, direct
