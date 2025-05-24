@@ -34,7 +34,7 @@ class MockApp:
 
 app = MockApp()
 
-FAILED = "failed.png"  # Default failed image path
+FAILED = "bot.png"  # Default failed image path
 
 def changeImageSize(maxWidth, maxHeight, image):
     widthRatio = maxWidth / image.size[0]
