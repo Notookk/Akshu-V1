@@ -28,8 +28,8 @@ async def shell_cmd(cmd):
 
 
 async def get_stream_url(query, video=False):
-    api_url = "https://538d40d1-8d44-4ca5-8984-3d5f16d8d966-00-2z3785n0bjxro.sisko.replit.dev/youtube"  # Or your VPS IP if not local
-    api_key = "jaydip"
+    api_url = "http://128.0.118.34:8080/"  # Or your VPS IP if not local
+    api_key = "your_api_key_here"
     
     async with httpx.AsyncClient(timeout=60) as client:
         params = {
