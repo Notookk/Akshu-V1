@@ -13,7 +13,7 @@ from youtubesearchpython.__future__ import VideosSearch
 from AviaxMusic.utils.formatters import time_to_seconds
 
 # ============== CONFIGURE YOUR API ==============
-YOUR_API_URL = "http://http://128.0.118.34:8000/"   # <--- Change me!
+YOUR_API_URL = "http://128.0.118.34:8000/"   # <--- Change me!
 YOUR_API_KEY = "ishq_mein"          # <--- Change me!
 # ================================================
 
