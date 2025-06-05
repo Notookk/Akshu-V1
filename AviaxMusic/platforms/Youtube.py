@@ -13,15 +13,15 @@ from youtubesearchpython.__future__ import VideosSearch
 from AviaxMusic.utils.formatters import time_to_seconds
 
 # ============== CONFIGURE YOUR API ==============
-YOUR_API_URL = "http://128.0.118.34:8000/"   # <--- Change me!
-YOUR_API_KEY = "ishq_mein"          # <--- Change me!
+YOUR_API_URL = "http://128.0.118.34:8000"   # <--- NO trailing slash!
+YOUR_API_KEY = "ishq_mein"                  # <--- Change me!
 # ================================================
 
 async def get_file_from_api(video_id, audio=True):
-    endpoint = "/download"
+    endpoint = "/download/audio" if audio else "/download/video"
+    url = f"{YOUR_API_URL}{endpoint}"
     params = {"video_id": video_id}
     headers = {"x-api-key": YOUR_API_KEY}
-    url = f"{YOUR_API_URL}{endpoint}"
     async with httpx.AsyncClient(timeout=180) as client:
         response = await client.get(url, params=params, headers=headers)
         if response.status_code == 200:
