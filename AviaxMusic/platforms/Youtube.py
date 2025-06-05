@@ -13,8 +13,8 @@ from youtubesearchpython.__future__ import VideosSearch
 from AviaxMusic.utils.formatters import time_to_seconds
 
 # ============== CONFIGURE YOUR API ==============
-YOUR_API_URL = "http://128.0.118.34:8000"   # <--- NO trailing slash!
-YOUR_API_KEY = "ishq_mein"                  # <--- Change me!
+YOUR_API_URL = "http://128.0.118.34:8000"
+YOUR_API_KEY = "ishq_mein"            # <--- Change me!
 # ================================================
 
 async def get_file_from_api(video_id, audio=True):
