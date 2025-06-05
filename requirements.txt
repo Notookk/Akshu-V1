@@ -24,6 +24,6 @@ spotipy
 tgcrypto
 unidecode
 uvloop
-yt-dlp
+yt-dlp[default]
 youtube-search
 youtube-search-python
